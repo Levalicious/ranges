@@ -44,14 +44,6 @@ void list10(range* r) {
     printf("%lu\n", r->b[0] + r->p[0] * 9);
 }
 
-void printRange(range* r) {
-    for (u64 i = 0; i < r->cnt; ++i) {
-        printf("%lu %lu %lu\n", r->b[i], r->e[i], r->p[i]);
-    }
-    printf("\n");
-}
-
-
 void reallocrange(range* c) {
     c->cap *= 2;
 
@@ -111,11 +103,44 @@ range* sortRange(range* a) {
     return a;
 }
 
+range* fixOverflow(range* a) {
+    for (u64 i = 0; i < a->cnt; ++i) {
+        if (a->b[i] > a->e[i]) {
+            if (a->cnt >= a->cap) reallocrange(a);
+            a->b[a->cnt] = a->b[i];
+            a->e[a->cnt] = UINT64_MAX;
+            a->p[a->cnt] = a->p[i];
+            if (((0 - a->b[a->cnt]) % a->p[i]) == 0) {
+                a->b[i] = (((0 - a->b[a->cnt]) / a->p[i])) * a->p[i] + a->b[a->cnt];
+            } else {
+                a->b[i] = (((0 - a->b[a->cnt]) / a->p[i]) + 1) * a->p[i] + a->b[a->cnt];
+            }
+            a->cnt++;
+        }
+    }
+    return a;
+}
+
+void printRaw(range* r) {
+    for (u64 i = 0; i < r->cnt; ++i) {
+        printf("> %lu %lu %lu\n", r->b[i], r->e[i], r->p[i]);
+    }
+    printf("\n");
+}
+
 range* reduceRange(range* a) {
     sortRange(a);
+
     u64 ncnt = a->cnt;
     for (u64 i = a->cnt - 1; i < a->cnt; --i) {
         for (u64 j = 0; j < i; ++j) {
+            if (a->p[j] == UINT64_MAX) continue;
+            /* Case: period of 0 */
+            if (a->p[j] == 0) {
+                a->p[j] = UINT64_MAX;
+                ncnt--;
+                break;
+            }
             /* Case: Same range, larger period is multiple of smaller */
             if (a->b[i] == a->b[j] && a->e[i] == a->e[j] && a->p[i] % a->p[j] == 0) {
                 a->p[i] = UINT64_MAX;
@@ -123,7 +148,10 @@ range* reduceRange(range* a) {
                 break;
             }
             /* Case: Same period, same phase, overlapping/touching */
-            if (a->p[i] == a->p[j] && (a->b[i] % a->p[i] == a->b[j] % a->p[j])) {
+            if ((a->p[i] == a->p[j]) && (a->b[i] % a->p[i] == a->b[j] % a->p[j])) {
+                u64 pa, po;
+                pa = a->p[i];
+                po = a->p[j];
                 u64 mn, mi, mb, me;
                 mn = min(a->e[i], a->e[j]);
                 mb = max(a->b[i], a->b[j]);
@@ -132,9 +160,10 @@ range* reduceRange(range* a) {
 
                 u64 nval = (((mn - mi) / a->p[i]) + 1) * a->p[i] + mi;
 
-                if (nval >= mb && nval <= me) {
+                if ((nval >= mb && nval <= me)) {
                     a->b[j] = mi;
                     a->e[j] = me;
+                    a->p[i] = UINT64_MAX;
                     ncnt--;
                     break;
                 }
@@ -147,11 +176,21 @@ range* reduceRange(range* a) {
 }
 
 range* rangeRenorm(range* a) {
+    fixOverflow(a);
     for (u64 i = 0; i < a->cnt; ++i) {
         u64 nval = (((a->e[i] - a->b[i]) / a->p[i])) * a->p[i] + a->b[i];
         a->e[i] = nval;
     }
     return a;
+}
+
+void printRange(range* r) {
+    rangeRenorm(r);
+    r = reduceRange(r);
+    for (u64 i = 0; i < r->cnt; ++i) {
+        printf("%lu %lu %lu\n", r->b[i], r->e[i], r->p[i]);
+    }
+    printf("\n");
 }
 
 range* addRange(range* c, range* a, range* b) {
@@ -163,22 +202,23 @@ range* addRange(range* c, range* a, range* b) {
         reallocrange(c);
         goto tryAgain;
     }
+
     for (u64 i = 0; i < a->cnt; ++i) {
         for (u64 j = 0; j < b->cnt; ++j) {
-            c->p[i * b->cnt + j * 2 + 0] = a->p[i];
-            c->b[i * b->cnt + j * 2 + 0] = a->b[i] + b->b[j];
-            if (c->p[i * b->cnt + j * 2 + 0] != 1) {
-                c->e[i * b->cnt + j * 2 + 0] = (((a->e[i] + b->e[j]) - c->b[i * b->cnt + j * 2 + 0]) / a->p[i]) * a->p[i] + c->b[i * b->cnt + j * 2 + 0];
+            c->p[i * b->cnt * 2 + j * 2 + 0] = a->p[i];
+            c->b[i * b->cnt * 2 + j * 2 + 0] = a->b[i] + b->b[j];
+            if (c->p[i * b->cnt * 2 + j * 2 + 0] > 1) {
+                c->e[i * b->cnt * 2 + j * 2 + 0] = (((a->e[i] + b->e[j]) - c->b[i * b->cnt * 2 + j * 2 + 0]) / a->p[i]) * a->p[i] + c->b[i * b->cnt * 2 + j * 2 + 0];
             } else {
-                c->e[i * b->cnt + j * 2 + 0] = a->e[i] + b->e[j];
+                c->e[i * b->cnt * 2 + j * 2 + 0] = a->e[i] + b->e[j];
             }
 
-            c->p[i * b->cnt + j * 2 + 1] = b->p[j];
-            c->b[i * b->cnt + j * 2 + 1] = a->b[i] + b->b[j];
-            if (c->p[i * b->cnt + j * 2 + 0] != 1) {
-                c->e[i * b->cnt + j * 2 + 1] = (((a->e[i] + b->e[j]) - c->b[i * b->cnt + j * 2 + 1]) / a->p[j]) * a->p[j] + c->b[i * b->cnt + j * 2 + 1];
+            c->p[i * b->cnt * 2 + j * 2 + 1] = b->p[j];
+            c->b[i * b->cnt * 2 + j * 2 + 1] = a->b[i] + b->b[j];
+            if (c->p[i * b->cnt * 2 + j * 2 + 1] > 1) {
+                c->e[i * b->cnt * 2 + j * 2 + 1] = (((a->e[i] + b->e[j]) - c->b[i * b->cnt * 2 + j * 2 + 1]) / b->p[j]) * b->p[j] + c->b[i * b->cnt * 2 + j * 2 + 1];
             } else {
-                c->e[i * b->cnt + j * 2 + 1] = a->e[i] + b->e[j];
+                c->e[i * b->cnt * 2 + j * 2 + 1] = a->e[i] + b->e[j];
             }
         }
     }
@@ -197,25 +237,36 @@ range* subRange(range* c, range* a, range* b) {
     }
     for (u64 i = 0; i < a->cnt; ++i) {
         for (u64 j = 0; j < b->cnt; ++j) {
-            c->p[i * b->cnt + j * 2 + 0] = a->p[i];
-            c->b[i * b->cnt + j * 2 + 0] = a->b[i] - b->e[j];
-            if (c->p[i * b->cnt + j * 2 + 0] != 1) {
-                c->e[i * b->cnt + j * 2 + 0] = (((a->e[i] - b->b[j]) - c->b[i * b->cnt + j * 2 + 0]) / a->p[i]) * a->p[i] + c->b[i * b->cnt + j * 2 + 0];
+            c->p[i * b->cnt * 2 + j * 2 + 0] = a->p[i];
+            c->b[i * b->cnt * 2 + j * 2 + 0] = a->b[i] - b->e[j];
+            if (c->p[i * b->cnt * 2 + j * 2 + 0] != 1) {
+                c->e[i * b->cnt * 2 + j * 2 + 0] = (((a->e[i] - b->b[j]) - c->b[i * b->cnt * 2 + j * 2 + 0]) / a->p[i]) * a->p[i] + c->b[i * b->cnt * 2 + j * 2 + 0];
             } else {
-                c->e[i * b->cnt + j * 2 + 0] = a->e[i] - b->b[j];
+                c->e[i * b->cnt * 2 + j * 2 + 0] = a->e[i] - b->b[j];
             }
 
-            c->p[i * b->cnt + j * 2 + 1] = b->p[j];
-            c->b[i * b->cnt + j * 2 + 1] = a->b[i] - b->e[j];
-            if (c->p[i * b->cnt + j * 2 + 0] != 1) {
-                c->e[i * b->cnt + j * 2 + 1] = (((a->e[i] - b->b[j]) - c->b[i * b->cnt + j * 2 + 1]) / a->p[j]) * a->p[j] + c->b[i * b->cnt + j * 2 + 1];
+            c->p[i * b->cnt * 2 + j * 2 + 1] = b->p[j];
+            c->b[i * b->cnt * 2 + j * 2 + 1] = a->b[i] - b->e[j];
+            if (c->p[i * b->cnt * 2 + j * 2 + 0] != 1) {
+                c->e[i * b->cnt * 2 + j * 2 + 1] = (((a->e[i] - b->b[j]) - c->b[i * b->cnt * 2 + j * 2 + 1]) / a->p[j]) * a->p[j] + c->b[i * b->cnt * 2 + j * 2 + 1];
             } else {
-                c->e[i * b->cnt + j * 2 + 1] = a->e[i] - b->b[j];
+                c->e[i * b->cnt * 2 + j * 2 + 1] = a->e[i] - b->b[j];
             }
         }
     }
 
     return reduceRange(c);;
+}
+
+range* rangeMul(range* c, range* a, range* b) {
+    rangeRenorm(a);
+    rangeRenorm(b);
+    tryAgain:;
+    c->cnt = 2 * a->cnt * b->cnt;
+    if (c->cnt >= c->cap) {
+        reallocrange(c);
+        goto tryAgain;
+    }
 }
 
 void freeRange(range* r) {
