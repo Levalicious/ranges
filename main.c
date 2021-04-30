@@ -99,7 +99,7 @@ u64 smax(range* a) {
 
 
 int main() {
-    range* a = initRange(3, 15, 1);
+    range* a = initRange(3, 15, 4);
     range* b = initRange(2, 20, 7);
     range* c = initRange(0, 0, 0);
     subRange(c, a, b);
@@ -108,6 +108,8 @@ int main() {
     printRange(b);
     printRange(c);
 
+    printf("%lu\n", a->b[0] - b->e[0]);
+    printf("%lu\n", b->b[0] - a->e[0]);
 
     return 0;
 }

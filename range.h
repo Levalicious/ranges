@@ -146,7 +146,17 @@ range* reduceRange(range* a) {
     return a;
 }
 
+range* rangeRenorm(range* a) {
+    for (u64 i = 0; i < a->cnt; ++i) {
+        u64 nval = (((a->e[i] - a->b[i]) / a->p[i])) * a->p[i] + a->b[i];
+        a->e[i] = nval;
+    }
+    return a;
+}
+
 range* addRange(range* c, range* a, range* b) {
+    rangeRenorm(a);
+    rangeRenorm(b);
     tryAgain:;
     c->cnt = 2 * a->cnt * b->cnt;
     if (c->cnt >= c->cap) {
@@ -177,6 +187,8 @@ range* addRange(range* c, range* a, range* b) {
 }
 
 range* subRange(range* c, range* a, range* b) {
+    rangeRenorm(a);
+    rangeRenorm(b);
     tryAgain:;
     c->cnt = 2 * a->cnt * b->cnt;
     if (c->cnt >= c->cap) {
